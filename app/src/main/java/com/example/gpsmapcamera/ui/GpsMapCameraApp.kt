@@ -26,7 +26,14 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.text.ExperimentalTextApi
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -133,7 +140,7 @@ private fun OverlayPreview(config: OverlayConfig) {
     ) {
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(
-                modifier = Modifier.width(120.dp),
+                modifier = Modifier.width(108.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
                 Button(
@@ -143,14 +150,13 @@ private fun OverlayPreview(config: OverlayConfig) {
                     shape = RoundedCornerShape(50),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(28.dp)
+                        .height(22.dp)
                 ) {
                     Text("Check In", fontSize = 11.sp)
                 }
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
+                        .size(108.dp)
                         .background(Color(0xFF2B2B2B), RoundedCornerShape(8.dp))
                         .clip(RoundedCornerShape(8.dp)),
                     contentAlignment = Alignment.Center
@@ -168,28 +174,15 @@ private fun OverlayPreview(config: OverlayConfig) {
                 }
             }
 
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                val lines = config.details.takeIf { it.isNotBlank() }?.lines()
-                    ?: listOf("Location title", "Address line", "Lat/Long", "Date/Time")
-                val title = lines.first()
-                val body = lines.drop(1).joinToString("\n")
-                Text(
-                    title,
-                    color = Color.White,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                )
-                Text(
-                    body,
-                    color = Color.White,
-                    fontSize = 13.sp,
-                    maxLines = 3,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            Column(modifier = Modifier.weight(1f)) {
+                val textBlock = config.details.takeIf { it.isNotBlank() }
+                    ?: "Location title\nAddress line\nLat/Long\nDate/Time"
+                AutoSizeTextBlock(
+                    text = textBlock,
+                    modifier = Modifier.fillMaxSize(),
+                    maxLines = 5,
+                    baseSize = 13.sp,
+                    minSize = 8.sp
                 )
             }
         }
@@ -335,7 +328,9 @@ private fun CameraScreen(
             implementationMode = PreviewView.ImplementationMode.COMPATIBLE
         }
     }
-    val overlayHeight = 150.dp
+    val overlayHeightRatio = 0.22f
+    val overlayBottomPaddingRatio = 0.03f
+    val leftColumnWidthRatio = 0.33f
 
     LaunchedEffect(permissionState.value) {
         if (permissionState.value) {
@@ -356,11 +351,17 @@ private fun CameraScreen(
         },
         snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { padding ->
-        Box(
+        BoxWithConstraints(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
         ) {
+            val overlayHeight = maxHeight * overlayHeightRatio
+            val overlayBottomPadding = maxHeight * overlayBottomPaddingRatio
+            val leftColumnWidth = maxWidth * leftColumnWidthRatio
+            val thumbSize = leftColumnWidth
+            val checkInHeight = overlayHeight * 0.22f
+            val columnGap = overlayHeight * 0.06f
             if (!permissionState.value) {
                 Column(
                     modifier = Modifier
@@ -386,10 +387,15 @@ private fun CameraScreen(
                     onCheckIn = {
                         scope.launch { snackbarHostState.showSnackbar("Checked in") }
                     },
+                    leftColumnWidth = leftColumnWidth,
+                    thumbSize = thumbSize,
+                    checkInHeight = checkInHeight,
+                    columnGap = columnGap,
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         .height(overlayHeight)
+                        .padding(bottom = overlayBottomPadding)
                 )
 
                 FloatingActionButton(
@@ -435,7 +441,7 @@ private fun CameraScreen(
                     },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = overlayHeight + 16.dp)
+                        .padding(bottom = overlayHeight + overlayBottomPadding + 16.dp)
                 ) {
                     Text("Capture")
                 }
@@ -448,6 +454,10 @@ private fun CameraScreen(
 private fun OverlayPanel(
     config: OverlayConfig,
     onCheckIn: () -> Unit,
+    leftColumnWidth: Dp,
+    thumbSize: Dp,
+    checkInHeight: Dp,
+    columnGap: Dp,
     modifier: Modifier = Modifier
 ) {
     val density = LocalDensity.current
@@ -461,8 +471,8 @@ private fun OverlayPanel(
     ) {
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Column(
-                modifier = Modifier.width(130.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
+                modifier = Modifier.width(leftColumnWidth),
+                verticalArrangement = Arrangement.spacedBy(columnGap)
             ) {
                 Button(
                     onClick = onCheckIn,
@@ -471,14 +481,13 @@ private fun OverlayPanel(
                     shape = RoundedCornerShape(50),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(28.dp)
+                        .height(checkInHeight * 0.7f)
                 ) {
                     Text("Check In", fontSize = 11.sp)
                 }
                 Box(
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1f)
+                        .size(thumbSize)
                         .background(Color(0xFF2B2B2B), RoundedCornerShape(8.dp))
                         .clip(RoundedCornerShape(8.dp)),
                     contentAlignment = Alignment.Center
@@ -496,28 +505,15 @@ private fun OverlayPanel(
                 }
             }
 
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(2.dp)
-            ) {
-                val lines = config.details.takeIf { it.isNotBlank() }?.lines()
-                    ?: listOf("Location title", "Address line", "Lat/Long", "Date/Time")
-                val title = lines.first()
-                val body = lines.drop(1).joinToString("\n")
-                Text(
-                    title,
-                    color = Color.White,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
-                )
-                Text(
-                    body,
-                    color = Color.White,
-                    fontSize = 13.sp,
-                    maxLines = 3,
-                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+            Column(modifier = Modifier.weight(1f)) {
+                val textBlock = config.details.takeIf { it.isNotBlank() }
+                    ?: "Location title\nAddress line\nLat/Long\nDate/Time"
+                AutoSizeTextBlock(
+                    text = textBlock,
+                    modifier = Modifier.fillMaxSize(),
+                    maxLines = 5,
+                    baseSize = 13.sp,
+                    minSize = 8.sp
                 )
             }
         }
@@ -548,4 +544,44 @@ private fun rememberBitmapFromUri(uriString: String, targetPx: Int? = null): and
         bitmap = decoded
     }
     return bitmap
+}
+
+@OptIn(ExperimentalTextApi::class)
+@Composable
+private fun AutoSizeTextBlock(
+    text: String,
+    modifier: Modifier = Modifier,
+    maxLines: Int,
+    baseSize: TextUnit,
+    minSize: TextUnit
+) {
+    val measurer = rememberTextMeasurer()
+    BoxWithConstraints(modifier) {
+        val availableWidth = constraints.maxWidth.coerceAtLeast(1)
+        val availableHeight = constraints.maxHeight.coerceAtLeast(1)
+        val sizes = remember(baseSize, minSize) {
+            val start = baseSize.value.toInt()
+            val end = minSize.value.toInt()
+            if (start <= end) listOf(baseSize) else (start downTo end).map { it.sp }
+        }
+        val selectedSize = remember(text, availableWidth, availableHeight, sizes) {
+            sizes.firstOrNull { size ->
+                val result = measurer.measure(
+                    text = text,
+                    style = TextStyle(fontSize = size, color = Color.White),
+                    maxLines = maxLines,
+                    overflow = TextOverflow.Ellipsis,
+                    constraints = Constraints(maxWidth = availableWidth)
+                )
+                result.size.height <= availableHeight
+            } ?: sizes.last()
+        }
+        Text(
+            text = text,
+            color = Color.White,
+            fontSize = selectedSize,
+            maxLines = maxLines,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
 }

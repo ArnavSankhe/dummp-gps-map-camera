@@ -113,7 +113,8 @@ fun renderOverlayOnBitmap(
     val canvas = Canvas(result)
 
     val overlayHeight = (result.height * 0.22f).roundToInt()
-    val overlayTop = result.height - overlayHeight
+    val bottomMargin = (result.height * 0.03f).roundToInt()
+    val overlayTop = (result.height - overlayHeight - bottomMargin).coerceAtLeast(0)
     val overlayRect = RectF(0f, overlayTop.toFloat(), result.width.toFloat(), result.height.toFloat())
 
     val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -122,16 +123,19 @@ fun renderOverlayOnBitmap(
     val overlayCorner = overlayHeight * 0.08f
     canvas.drawRoundRect(overlayRect, overlayCorner, overlayCorner, backgroundPaint)
 
-    val padding = overlayHeight * 0.08f
-    val leftColumnWidth = result.width * 0.30f
+    val padding = overlayHeight * 0.06f
+    val leftColumnWidth = result.width * 0.33f
     val pillHeight = overlayHeight * 0.22f
     val pillTop = overlayTop + padding
-    val pillBottom = pillTop + pillHeight
+    val pillBottom = pillTop + pillHeight * 0.7f
+    val columnGap = overlayHeight * 0.06f
+    val thumbTop = pillBottom + columnGap
+    val thumbSize = minOf(leftColumnWidth, result.height - padding - thumbTop)
     val thumbRect = RectF(
         padding,
-        pillBottom + padding * 0.6f,
-        padding + leftColumnWidth,
-        result.height - padding
+        thumbTop,
+        padding + thumbSize,
+        thumbTop + thumbSize
     )
     val pillRect = RectF(
         thumbRect.left,
@@ -178,52 +182,28 @@ fun renderOverlayOnBitmap(
 
     val textStartX = thumbRect.right + padding
     val textAvailableWidth = result.width - textStartX - padding
+    val textAvailableHeight = overlayHeight - padding * 2f
 
-    val titlePaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        color = Color.WHITE
-        textSize = overlayHeight * 0.16f
-        typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
-    }
-
+    val textBlock = config.details.takeIf { it.isNotBlank() }
+        ?: "Location title\nAddress line\nLat/Long\nDate/Time"
+    val maxLines = 5
     val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = Color.WHITE
-        textSize = overlayHeight * 0.13f
         typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
     }
 
-    val lines = config.details.takeIf { it.isNotBlank() }?.lines()
-        ?: listOf("Location title", "Address line", "Lat/Long", "Date/Time")
+    val textWidth = textAvailableWidth.roundToInt().coerceAtLeast(1)
+    val textHeight = textAvailableHeight.roundToInt().coerceAtLeast(1)
+    val baseSize = overlayHeight * 0.15f
+    val minSize = overlayHeight * 0.08f
+    val bestSize = findBestTextSize(textBlock, textPaint, textWidth, textHeight, maxLines, baseSize, minSize)
+    textPaint.textSize = bestSize
 
-    var currentY = overlayTop + padding * 0.6f
-    val title = TextUtils.ellipsize(
-        lines.first(),
-        titlePaint,
-        textAvailableWidth,
-        TextUtils.TruncateAt.END
-    ).toString()
-    canvas.drawText(title, textStartX, currentY + titlePaint.textSize, titlePaint)
-    currentY += titlePaint.textSize * 0.8f
-
-    val bodyText = lines.drop(1).joinToString("\n").trim()
-    if (bodyText.isNotEmpty()) {
-        val textWidth = textAvailableWidth.roundToInt().coerceAtLeast(1)
-        val layout = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            StaticLayout.Builder.obtain(bodyText, 0, bodyText.length, textPaint, textWidth)
-                .setAlignment(Layout.Alignment.ALIGN_NORMAL)
-                .setLineSpacing(0f, 1.15f)
-                .setIncludePad(false)
-                .setEllipsize(TextUtils.TruncateAt.END)
-                .setMaxLines(3)
-                .build()
-        } else {
-            @Suppress("DEPRECATION")
-            StaticLayout(bodyText, textPaint, textWidth, Layout.Alignment.ALIGN_NORMAL, 1.15f, 0f, false)
-        }
-        canvas.save()
-        canvas.translate(textStartX, currentY)
-        layout.draw(canvas)
-        canvas.restore()
-    }
+    val layout = buildStaticLayout(textBlock, textPaint, textWidth, maxLines)
+    canvas.save()
+    canvas.translate(textStartX, overlayTop + padding)
+    layout.draw(canvas)
+    canvas.restore()
 
     return result
 }
@@ -258,6 +238,42 @@ private fun drawCenterCropRoundedBitmap(canvas: Canvas, bitmap: Bitmap, dest: Re
     canvas.clipPath(path)
     drawCenterCropBitmap(canvas, bitmap, dest)
     canvas.restoreToCount(saveCount)
+}
+
+private fun buildStaticLayout(
+    text: String,
+    paint: TextPaint,
+    width: Int,
+    maxLines: Int
+): StaticLayout {
+    return StaticLayout.Builder.obtain(text, 0, text.length, paint, width)
+        .setAlignment(Layout.Alignment.ALIGN_NORMAL)
+        .setLineSpacing(0f, 1.12f)
+        .setIncludePad(false)
+        .setEllipsize(TextUtils.TruncateAt.END)
+        .setMaxLines(maxLines)
+        .build()
+}
+
+private fun findBestTextSize(
+    text: String,
+    paint: TextPaint,
+    width: Int,
+    maxHeight: Int,
+    maxLines: Int,
+    startSize: Float,
+    minSize: Float
+): Float {
+    var size = startSize
+    while (size >= minSize) {
+        paint.textSize = size
+        val layout = buildStaticLayout(text, paint, width, maxLines)
+        if (layout.height <= maxHeight) {
+            return size
+        }
+        size -= 1f
+    }
+    return minSize
 }
 
 fun saveBitmapToGallery(
