@@ -12,28 +12,19 @@ import kotlinx.coroutines.flow.map
 private val Context.dataStore: DataStore<Preferences> by preferencesDataStore("overlay_prefs")
 
 class OverlayRepository(private val context: Context) {
-    private val titleKey = stringPreferencesKey("title")
-    private val addressKey = stringPreferencesKey("address")
-    private val latLongKey = stringPreferencesKey("lat_long")
-    private val dateTimeKey = stringPreferencesKey("date_time")
+    private val detailsKey = stringPreferencesKey("details")
     private val mapUriKey = stringPreferencesKey("map_uri")
 
     val configFlow: Flow<OverlayConfig> = context.dataStore.data.map { prefs ->
         OverlayConfig(
-            title = prefs[titleKey] ?: "",
-            address = prefs[addressKey] ?: "",
-            latLong = prefs[latLongKey] ?: "",
-            dateTime = prefs[dateTimeKey] ?: "",
+            details = prefs[detailsKey] ?: "",
             mapUri = prefs[mapUriKey] ?: ""
         )
     }
 
     suspend fun save(config: OverlayConfig) {
         context.dataStore.edit { prefs ->
-            prefs[titleKey] = config.title
-            prefs[addressKey] = config.address
-            prefs[latLongKey] = config.latLong
-            prefs[dateTimeKey] = config.dateTime
+            prefs[detailsKey] = config.details
             prefs[mapUriKey] = config.mapUri
         }
     }

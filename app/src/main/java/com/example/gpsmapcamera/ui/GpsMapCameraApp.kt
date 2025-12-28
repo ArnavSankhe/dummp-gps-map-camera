@@ -6,6 +6,7 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.camera.view.PreviewView
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -18,8 +19,11 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
@@ -33,6 +37,7 @@ import com.example.gpsmapcamera.data.OverlayConfig
 import com.example.gpsmapcamera.data.OverlayRepository
 import com.example.gpsmapcamera.util.decodeCapturedBitmap
 import com.example.gpsmapcamera.util.loadBitmapFromUri
+import com.example.gpsmapcamera.util.loadThumbnailBitmap
 import com.example.gpsmapcamera.util.renderOverlayOnBitmap
 import com.example.gpsmapcamera.util.saveBitmapToGallery
 import kotlinx.coroutines.Dispatchers
@@ -115,50 +120,77 @@ private fun HomeScreen(
 @Composable
 private fun OverlayPreview(config: OverlayConfig) {
     val context = LocalContext.current
-    val mapBitmap = rememberBitmapFromUri(config.mapUri)
+    val density = LocalDensity.current
+    val mapTargetPx = with(density) { 160.dp.roundToPx() }
+    val mapBitmap = rememberBitmapFromUri(config.mapUri, mapTargetPx)
 
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .height(120.dp)
+            .height(140.dp)
             .background(Color(0xAA111111), RoundedCornerShape(12.dp))
             .padding(12.dp)
     ) {
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(
-                modifier = Modifier
-                    .width(96.dp)
-                    .fillMaxHeight()
-                    .background(Color(0xFF2B2B2B), RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center
+            Column(
+                modifier = Modifier.width(120.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (mapBitmap != null) {
+                Button(
+                    onClick = { Toast.makeText(context, "Checked in", Toast.LENGTH_SHORT).show() },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2F6FED)),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(50),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(28.dp)
+                ) {
+                    Text("Check In", fontSize = 11.sp)
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(Color(0xFF2B2B2B), RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (mapBitmap != null) {
                     Image(
                         bitmap = mapBitmap.asImageBitmap(),
                         contentDescription = "Map thumbnail",
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
                     )
-                } else {
-                    Text("No map", color = Color.White, fontSize = 12.sp)
+                    } else {
+                        Text("No map", color = Color.White, fontSize = 12.sp)
+                    }
                 }
             }
 
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Button(
-                    onClick = { Toast.makeText(context, "Checked in", Toast.LENGTH_SHORT).show() },
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2F6FED)),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                    shape = RoundedCornerShape(50)
-                ) {
-                    Text("Check In", fontSize = 12.sp)
-                }
-                Text(config.title.ifBlank { "Location title" }, color = Color.White)
-                Text(config.address.ifBlank { "Address line" }, color = Color.White)
-                Text(config.latLong.ifBlank { "Lat/Long" }, color = Color.White)
-                Text(config.dateTime.ifBlank { "Date/Time" }, color = Color.White)
+                val lines = config.details.takeIf { it.isNotBlank() }?.lines()
+                    ?: listOf("Location title", "Address line", "Lat/Long", "Date/Time")
+                val title = lines.first()
+                val body = lines.drop(1).joinToString("\n")
+                Text(
+                    title,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                Text(
+                    body,
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    maxLines = 3,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
             }
         }
     }
@@ -174,10 +206,7 @@ private fun ConfigureScreen(
     val context = LocalContext.current
     val scrollState = rememberScrollState()
 
-    var title by rememberSaveable(config.title) { mutableStateOf(config.title) }
-    var address by rememberSaveable(config.address) { mutableStateOf(config.address) }
-    var latLong by rememberSaveable(config.latLong) { mutableStateOf(config.latLong) }
-    var dateTime by rememberSaveable(config.dateTime) { mutableStateOf(config.dateTime) }
+    var details by rememberSaveable(config.details) { mutableStateOf(config.details) }
     var mapUri by rememberSaveable(config.mapUri) { mutableStateOf(config.mapUri) }
 
     val launcher = rememberLauncherForActivityResult(
@@ -216,28 +245,13 @@ private fun ConfigureScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             OutlinedTextField(
-                value = title,
-                onValueChange = { title = it },
-                label = { Text("Location title") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = address,
-                onValueChange = { address = it },
-                label = { Text("Address line") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = latLong,
-                onValueChange = { latLong = it },
-                label = { Text("Lat/Long") },
-                modifier = Modifier.fillMaxWidth()
-            )
-            OutlinedTextField(
-                value = dateTime,
-                onValueChange = { dateTime = it },
-                label = { Text("Date/Time") },
-                modifier = Modifier.fillMaxWidth()
+                value = details,
+                onValueChange = { details = it },
+                label = { Text("Overlay text (multi-line)") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .heightIn(min = 140.dp),
+                maxLines = 6
             )
 
             Button(onClick = { launcher.launch(arrayOf("image/*")) }) {
@@ -250,10 +264,7 @@ private fun ConfigureScreen(
                 onClick = {
                     onSave(
                         OverlayConfig(
-                            title = title,
-                            address = address,
-                            latLong = latLong,
-                            dateTime = dateTime,
+                            details = details,
                             mapUri = mapUri
                         )
                     )
@@ -268,7 +279,9 @@ private fun ConfigureScreen(
 
 @Composable
 private fun MapThumbnailPreview(mapUri: String) {
-    val mapBitmap = rememberBitmapFromUri(mapUri)
+    val density = LocalDensity.current
+    val mapTargetPx = with(density) { 320.dp.roundToPx() }
+    val mapBitmap = rememberBitmapFromUri(mapUri, mapTargetPx)
     Box(
         modifier = Modifier
             .fillMaxWidth()
@@ -281,7 +294,8 @@ private fun MapThumbnailPreview(mapUri: String) {
             Image(
                 bitmap = mapBitmap.asImageBitmap(),
                 contentDescription = "Selected map",
-                modifier = Modifier.fillMaxSize()
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
             )
         } else {
             Text("No map selected", color = Color(0xFF666666))
@@ -316,10 +330,12 @@ private fun CameraScreen(
 
     val controller = remember { CameraXController(context, lifecycleOwner) }
     val previewView = remember {
-        androidx.camera.view.PreviewView(context).apply {
-            scaleType = androidx.camera.view.PreviewView.ScaleType.FILL_CENTER
+        PreviewView(context).apply {
+            scaleType = PreviewView.ScaleType.FILL_CENTER
+            implementationMode = PreviewView.ImplementationMode.COMPATIBLE
         }
     }
+    val overlayHeight = 150.dp
 
     LaunchedEffect(permissionState.value) {
         if (permissionState.value) {
@@ -373,7 +389,7 @@ private fun CameraScreen(
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
-                        .height(160.dp)
+                        .height(overlayHeight)
                 )
 
                 FloatingActionButton(
@@ -391,13 +407,15 @@ private fun CameraScreen(
                                         val saved = withContext(Dispatchers.IO) {
                                             val captured = decodeCapturedBitmap(file) ?: return@withContext null
                                             val mapBitmap = if (config.mapUri.isNotBlank()) {
-                                                loadBitmapFromUri(context, Uri.parse(config.mapUri))
+                                                loadThumbnailBitmap(context, Uri.parse(config.mapUri), 512, 512)
                                             } else {
                                                 null
                                             }
                                             val composed = renderOverlayOnBitmap(captured, config, mapBitmap)
                                             val filename = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
-                                            saveBitmapToGallery(context, composed, "GPS_${filename}.jpg")
+                                            val savedUri = saveBitmapToGallery(context, composed, "GPS_${filename}.jpg")
+                                            file.delete()
+                                            savedUri
                                         }
                                         if (saved != null) {
                                             snackbarHostState.showSnackbar("Saved to gallery")
@@ -417,7 +435,7 @@ private fun CameraScreen(
                     },
                     modifier = Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(bottom = 24.dp)
+                        .padding(bottom = overlayHeight + 16.dp)
                 ) {
                     Text("Capture")
                 }
@@ -432,70 +450,102 @@ private fun OverlayPanel(
     onCheckIn: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val mapBitmap = rememberBitmapFromUri(config.mapUri)
+    val density = LocalDensity.current
+    val mapTargetPx = with(density) { 220.dp.roundToPx() }
+    val mapBitmap = rememberBitmapFromUri(config.mapUri, mapTargetPx)
 
     Box(
         modifier = modifier
-            .background(Color(0xAA111111))
+            .background(Color(0xAA111111), RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
             .padding(12.dp)
     ) {
         Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(
-                modifier = Modifier
-                    .width(120.dp)
-                    .fillMaxHeight()
-                    .background(Color(0xFF2B2B2B), RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center
+            Column(
+                modifier = Modifier.width(130.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (mapBitmap != null) {
+                Button(
+                    onClick = onCheckIn,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2F6FED)),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(50),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(28.dp)
+                ) {
+                    Text("Check In", fontSize = 11.sp)
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .weight(1f)
+                        .background(Color(0xFF2B2B2B), RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (mapBitmap != null) {
                     Image(
                         bitmap = mapBitmap.asImageBitmap(),
                         contentDescription = "Map thumbnail",
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop
                     )
-                } else {
-                    Text("No map selected", color = Color.White, fontSize = 12.sp)
+                    } else {
+                        Text("No map selected", color = Color.White, fontSize = 12.sp)
+                    }
                 }
             }
 
             Column(
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp)
+                verticalArrangement = Arrangement.spacedBy(2.dp)
             ) {
-                Button(
-                    onClick = onCheckIn,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2F6FED)),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
-                    shape = RoundedCornerShape(50)
-                ) {
-                    Text("Check In", fontSize = 12.sp)
-                }
-                Text(config.title.ifBlank { "Location title" }, color = Color.White)
-                Text(config.address.ifBlank { "Address line" }, color = Color.White)
-                Text(config.latLong.ifBlank { "Lat/Long" }, color = Color.White)
-                Text(config.dateTime.ifBlank { "Date/Time" }, color = Color.White)
+                val lines = config.details.takeIf { it.isNotBlank() }?.lines()
+                    ?: listOf("Location title", "Address line", "Lat/Long", "Date/Time")
+                val title = lines.first()
+                val body = lines.drop(1).joinToString("\n")
+                Text(
+                    title,
+                    color = Color.White,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
+                Text(
+                    body,
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    maxLines = 3,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
+                )
             }
         }
     }
 }
 
 @Composable
-private fun rememberBitmapFromUri(uriString: String): android.graphics.Bitmap? {
+private fun rememberBitmapFromUri(uriString: String, targetPx: Int? = null): android.graphics.Bitmap? {
     val context = LocalContext.current
     var bitmap by remember(uriString) { mutableStateOf<android.graphics.Bitmap?>(null) }
-    
+
     LaunchedEffect(uriString) {
-        if (uriString.isNotBlank()) {
+        val decoded = if (uriString.isNotBlank()) {
             withContext(Dispatchers.IO) {
                 try {
-                    bitmap = loadBitmapFromUri(context, Uri.parse(uriString))
-                } catch (e: Exception) {
-                    e.printStackTrace()
+                    if (targetPx != null) {
+                        loadThumbnailBitmap(context, Uri.parse(uriString), targetPx, targetPx)
+                    } else {
+                        loadBitmapFromUri(context, Uri.parse(uriString))
+                    }
+                } catch (_: Exception) {
+                    null
                 }
             }
         } else {
-            bitmap = null
+            null
         }
+        bitmap = decoded
     }
     return bitmap
 }
