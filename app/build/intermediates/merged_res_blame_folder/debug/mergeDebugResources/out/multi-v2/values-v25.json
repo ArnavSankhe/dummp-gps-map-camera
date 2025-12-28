@@ -1,0 +1,20 @@
+{
+    "logs": [
+        {
+            "outputFile": "com.example.gpsmapcamera.app-mergeDebugResources-64:/values-v25/values-v25.xml",
+            "map": [
+                {
+                    "source": "/home/arnie/.gradle/caches/9.0-milestone-1/transforms/41846adb0217e0751c8fe6c5cb182dd7/transformed/appcompat-1.6.1/res/values-v25/values-v25.xml",
+                    "from": {
+                        "startLines": "2,3,4,6",
+                        "startColumns": "4,4,4,4",
+                        "startOffsets": "55,126,209,308",
+                        "endLines": "2,3,5,7",
+                        "endColumns": "70,82,12,12",
+                        "endOffsets": "121,204,303,414"
+                    }
+                }
+            ]
+        }
+    ]
+}
