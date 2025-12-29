@@ -37,6 +37,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
@@ -46,6 +47,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.view.drawToBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.gpsmapcamera.R
 import com.example.gpsmapcamera.camera.CameraXController
 import com.example.gpsmapcamera.data.OverlayConfig
 import com.example.gpsmapcamera.data.OverlayRepository
@@ -136,6 +138,16 @@ private fun HomeScreen(
             Button(onClick = onOpenCamera, modifier = Modifier.fillMaxWidth()) {
                 Text("Open Camera")
             }
+            Image(
+                painter = painterResource(R.drawable.chirag_image),
+                contentDescription = "Overview photo",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp)),
+                contentScale = ContentScale.Crop,
+                alignment = Alignment.TopCenter
+            )
         }
     }
 }
