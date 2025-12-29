@@ -1,6 +1,8 @@
 package com.example.gpsmapcamera.camera
 
 import android.content.Context
+import android.view.Surface
+import androidx.camera.core.AspectRatio
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.Preview
@@ -19,15 +21,22 @@ class CameraXController(
 ) {
     private var cameraProvider: ProcessCameraProvider? = null
     val imageCapture: ImageCapture = ImageCapture.Builder()
+        .setTargetAspectRatio(AspectRatio.RATIO_16_9)
         .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
         .build()
 
     suspend fun bind(previewView: PreviewView) {
         try {
             cameraProvider = context.getCameraProvider()
-            val preview = Preview.Builder().build().also {
-                it.setSurfaceProvider(previewView.surfaceProvider)
-            }
+        val rotation = previewView.display?.rotation ?: Surface.ROTATION_0
+        imageCapture.targetRotation = rotation
+        val preview = Preview.Builder()
+            .setTargetAspectRatio(AspectRatio.RATIO_16_9)
+            .setTargetRotation(rotation)
+            .build()
+            .also {
+            it.setSurfaceProvider(previewView.surfaceProvider)
+        }
             
             // Try Back Camera first
             val backSelector = CameraSelector.DEFAULT_BACK_CAMERA

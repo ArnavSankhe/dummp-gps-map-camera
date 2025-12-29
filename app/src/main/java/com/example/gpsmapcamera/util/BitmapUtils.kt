@@ -308,3 +308,30 @@ fun saveBitmapToGallery(
         null
     }
 }
+
+fun compositeOverlayOnBitmap(base: Bitmap, overlay: Bitmap, yOffset: Int): Bitmap {
+    val result = base.copy(Bitmap.Config.ARGB_8888, true)
+    val canvas = Canvas(result)
+    canvas.drawBitmap(overlay, 0f, yOffset.toFloat(), null)
+    return result
+}
+
+fun cropCenterToAspect(bitmap: Bitmap, targetAspect: Float): Bitmap {
+    if (targetAspect <= 0f) return bitmap
+    val width = bitmap.width
+    val height = bitmap.height
+    if (width == 0 || height == 0) return bitmap
+
+    val currentAspect = width.toFloat() / height.toFloat()
+    return if (currentAspect > targetAspect) {
+        val newWidth = (height * targetAspect).toInt().coerceAtMost(width)
+        val xOffset = ((width - newWidth) / 2f).toInt().coerceAtLeast(0)
+        Bitmap.createBitmap(bitmap, xOffset, 0, newWidth, height)
+    } else if (currentAspect < targetAspect) {
+        val newHeight = (width / targetAspect).toInt().coerceAtMost(height)
+        val yOffset = ((height - newHeight) / 2f).toInt().coerceAtLeast(0)
+        Bitmap.createBitmap(bitmap, 0, yOffset, width, newHeight)
+    } else {
+        bitmap
+    }
+}

@@ -3,6 +3,9 @@ package com.example.gpsmapcamera.ui
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.widget.FrameLayout
+import android.view.View
+import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -16,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.CompositionContext
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -23,9 +27,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -38,18 +44,21 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.core.view.drawToBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.example.gpsmapcamera.camera.CameraXController
 import com.example.gpsmapcamera.data.OverlayConfig
 import com.example.gpsmapcamera.data.OverlayRepository
+import com.example.gpsmapcamera.util.compositeOverlayOnBitmap
+import com.example.gpsmapcamera.util.cropCenterToAspect
 import com.example.gpsmapcamera.util.decodeCapturedBitmap
 import com.example.gpsmapcamera.util.loadBitmapFromUri
 import com.example.gpsmapcamera.util.loadThumbnailBitmap
-import com.example.gpsmapcamera.util.renderOverlayOnBitmap
 import com.example.gpsmapcamera.util.saveBitmapToGallery
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.runtime.withFrameNanos
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -322,6 +331,7 @@ private fun CameraScreen(
     )
 
     val controller = remember { CameraXController(context, lifecycleOwner) }
+    val compositionContext = rememberCompositionContext()
     val previewView = remember {
         PreviewView(context).apply {
             scaleType = PreviewView.ScaleType.FILL_CENTER
@@ -356,12 +366,16 @@ private fun CameraScreen(
                 .padding(padding)
                 .fillMaxSize()
         ) {
+            val density = LocalDensity.current
             val overlayHeight = maxHeight * overlayHeightRatio
             val overlayBottomPadding = maxHeight * overlayBottomPaddingRatio
             val leftColumnWidth = maxWidth * leftColumnWidthRatio
             val thumbSize = leftColumnWidth
             val checkInHeight = overlayHeight * 0.22f
             val columnGap = overlayHeight * 0.06f
+            val previewAspectRatio = (maxWidth.value / maxHeight.value).coerceAtLeast(0.01f)
+            val previewWidthPx = with(density) { maxWidth.roundToPx() }
+            val previewHeightPx = with(density) { maxHeight.roundToPx() }
             if (!permissionState.value) {
                 Column(
                     modifier = Modifier
@@ -417,7 +431,28 @@ private fun CameraScreen(
                                             } else {
                                                 null
                                             }
-                                            val composed = renderOverlayOnBitmap(captured, config, mapBitmap)
+                                            val cropped = cropCenterToAspect(captured, previewAspectRatio)
+                                            val overlayHeightPx = (cropped.height * overlayHeightRatio).toInt()
+                                            val bottomPaddingPx = (cropped.height * overlayBottomPaddingRatio).toInt()
+                                            val overlayBitmap = withContext(Dispatchers.Main) {
+                                                renderOverlayBitmap(
+                                                    context = context,
+                                                    previewWidthDp = maxWidth,
+                                                    previewOverlayHeightDp = overlayHeight,
+                                                    previewWidthPx = previewWidthPx,
+                                                    previewOverlayHeightPx = (previewHeightPx * overlayHeightRatio).toInt(),
+                                                    targetWidthPx = cropped.width,
+                                                    targetHeightPx = overlayHeightPx,
+                                                    parentComposition = compositionContext,
+                                                    config = config,
+                                                    mapBitmap = mapBitmap,
+                                                    leftColumnWidthRatio = leftColumnWidthRatio,
+                                                    checkInHeightRatio = 0.22f,
+                                                    columnGapRatio = 0.06f
+                                                )
+                                            }
+                                            val yOffset = (cropped.height - overlayBitmap.height - bottomPaddingPx).coerceAtLeast(0)
+                                            val composed = compositeOverlayOnBitmap(cropped, overlayBitmap, yOffset)
                                             val filename = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
                                             val savedUri = saveBitmapToGallery(context, composed, "GPS_${filename}.jpg")
                                             file.delete()
@@ -546,6 +581,73 @@ private fun rememberBitmapFromUri(uriString: String, targetPx: Int? = null): and
     return bitmap
 }
 
+@Composable
+private fun OverlayPanelContent(
+    config: OverlayConfig,
+    mapBitmap: android.graphics.Bitmap?,
+    leftColumnWidth: Dp,
+    thumbSize: Dp,
+    checkInHeight: Dp,
+    columnGap: Dp,
+    onCheckIn: () -> Unit = {},
+    modifier: Modifier = Modifier
+) {
+    Box(
+        modifier = modifier
+            .background(Color(0xAA111111), RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp))
+            .padding(12.dp)
+    ) {
+        Row(Modifier.fillMaxSize(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(
+                modifier = Modifier.width(leftColumnWidth),
+                verticalArrangement = Arrangement.spacedBy(columnGap)
+            ) {
+                Button(
+                    onClick = onCheckIn,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF2F6FED)),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(50),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(checkInHeight * 0.7f)
+                ) {
+                    Text("Check In", fontSize = 11.sp)
+                }
+                Box(
+                    modifier = Modifier
+                        .size(thumbSize)
+                        .background(Color(0xFF2B2B2B), RoundedCornerShape(8.dp))
+                        .clip(RoundedCornerShape(8.dp)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (mapBitmap != null) {
+                        Image(
+                            bitmap = mapBitmap.asImageBitmap(),
+                            contentDescription = "Map thumbnail",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Text("No map selected", color = Color.White, fontSize = 12.sp)
+                    }
+                }
+            }
+
+            Column(modifier = Modifier.weight(1f)) {
+                val textBlock = config.details.takeIf { it.isNotBlank() }
+                    ?: "Location title\nAddress line\nLat/Long\nDate/Time"
+                AutoSizeTextBlock(
+                    text = textBlock,
+                    modifier = Modifier.fillMaxSize(),
+                    maxLines = 5,
+                    baseSize = 13.sp,
+                    minSize = 8.sp
+                )
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalTextApi::class)
 @Composable
 private fun AutoSizeTextBlock(
@@ -584,4 +686,70 @@ private fun AutoSizeTextBlock(
             overflow = TextOverflow.Ellipsis
         )
     }
+}
+
+private suspend fun renderOverlayBitmap(
+    context: android.content.Context,
+    previewWidthDp: Dp,
+    previewOverlayHeightDp: Dp,
+    previewWidthPx: Int,
+    previewOverlayHeightPx: Int,
+    targetWidthPx: Int,
+    targetHeightPx: Int,
+    parentComposition: CompositionContext,
+    config: OverlayConfig,
+    mapBitmap: android.graphics.Bitmap?,
+    leftColumnWidthRatio: Float,
+    checkInHeightRatio: Float,
+    columnGapRatio: Float
+): android.graphics.Bitmap {
+    val composeView = ComposeView(context).apply {
+        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
+        setParentCompositionContext(parentComposition)
+    }
+    val container = FrameLayout(context).apply {
+        addView(
+            composeView,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT
+            )
+        )
+    }
+    val activity = context as? androidx.activity.ComponentActivity
+        ?: return android.graphics.Bitmap.createBitmap(targetWidthPx, targetHeightPx, android.graphics.Bitmap.Config.ARGB_8888)
+    composeView.setContent {
+        MaterialTheme {
+            val widthDp = previewWidthDp
+            val heightDp = previewOverlayHeightDp
+            val leftColumnWidth = widthDp * leftColumnWidthRatio
+            val thumbSize = leftColumnWidth
+            val checkInHeight = heightDp * checkInHeightRatio
+            val columnGap = heightDp * columnGapRatio
+            OverlayPanelContent(
+                config = config,
+                mapBitmap = mapBitmap,
+                leftColumnWidth = leftColumnWidth,
+                thumbSize = thumbSize,
+                checkInHeight = checkInHeight,
+                columnGap = columnGap,
+                onCheckIn = {},
+                modifier = Modifier
+                    .width(widthDp)
+                    .height(heightDp)
+            )
+        }
+    }
+    val widthSpec = android.view.View.MeasureSpec.makeMeasureSpec(previewWidthPx, android.view.View.MeasureSpec.EXACTLY)
+    val heightSpec = android.view.View.MeasureSpec.makeMeasureSpec(previewOverlayHeightPx, android.view.View.MeasureSpec.EXACTLY)
+    val root = activity.window?.decorView as? ViewGroup
+        ?: return android.graphics.Bitmap.createBitmap(targetWidthPx, targetHeightPx, android.graphics.Bitmap.Config.ARGB_8888)
+    container.visibility = View.INVISIBLE
+    root.addView(container, ViewGroup.LayoutParams(previewWidthPx, previewOverlayHeightPx))
+    container.measure(widthSpec, heightSpec)
+    container.layout(0, 0, previewWidthPx, previewOverlayHeightPx)
+    withFrameNanos { }
+    val bitmap = container.drawToBitmap(android.graphics.Bitmap.Config.ARGB_8888)
+    root.removeView(container)
+    return android.graphics.Bitmap.createScaledBitmap(bitmap, targetWidthPx, targetHeightPx, true)
 }
