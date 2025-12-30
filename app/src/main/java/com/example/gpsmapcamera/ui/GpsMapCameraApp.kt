@@ -37,6 +37,7 @@ import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
@@ -46,6 +47,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.core.view.drawToBitmap
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.gpsmapcamera.R
 import com.example.gpsmapcamera.camera.CameraXController
 import com.example.gpsmapcamera.data.OverlayConfig
 import com.example.gpsmapcamera.data.OverlayRepository
@@ -57,8 +59,10 @@ import com.example.gpsmapcamera.util.loadThumbnailBitmap
 import com.example.gpsmapcamera.util.saveBitmapToGallery
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.withFrameNanos
+import kotlin.coroutines.resume
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -75,28 +79,33 @@ fun GpsMapCameraApp() {
     val context = LocalContext.current
     val repository = remember { OverlayRepository(context) }
     val config by repository.configFlow.collectAsStateWithLifecycle(initialValue = OverlayConfig())
-    var currentScreen by remember { mutableStateOf<Screen>(Screen.Home) }
+    var currentScreenKey by rememberSaveable { mutableStateOf("home") }
+    val currentScreen = when (currentScreenKey) {
+        "configure" -> Screen.Configure
+        "camera" -> Screen.Camera
+        else -> Screen.Home
+    }
     val scope = rememberCoroutineScope()
 
     when (currentScreen) {
         Screen.Home -> HomeScreen(
             config = config,
-            onConfigure = { currentScreen = Screen.Configure },
-            onOpenCamera = { currentScreen = Screen.Camera }
+            onConfigure = { currentScreenKey = "configure" },
+            onOpenCamera = { currentScreenKey = "camera" }
         )
         Screen.Configure -> ConfigureScreen(
             config = config,
-            onBack = { currentScreen = Screen.Home },
+            onBack = { currentScreenKey = "home" },
             onSave = { updated ->
                 scope.launch {
                     repository.save(updated)
-                    currentScreen = Screen.Home
+                    currentScreenKey = "home"
                 }
             }
         )
         Screen.Camera -> CameraScreen(
             config = config,
-            onBack = { currentScreen = Screen.Home }
+            onBack = { currentScreenKey = "home" }
         )
     }
 }
@@ -129,6 +138,16 @@ private fun HomeScreen(
             Button(onClick = onOpenCamera, modifier = Modifier.fillMaxWidth()) {
                 Text("Open Camera")
             }
+            Image(
+                painter = painterResource(R.drawable.chirag_image),
+                contentDescription = "Overview photo",
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .weight(1f)
+                    .clip(RoundedCornerShape(16.dp)),
+                contentScale = ContentScale.Crop,
+                alignment = Alignment.TopCenter
+            )
         }
     }
 }
@@ -703,6 +722,26 @@ private suspend fun renderOverlayBitmap(
     checkInHeightRatio: Float,
     columnGapRatio: Float
 ): android.graphics.Bitmap {
+    suspend fun awaitAttached(view: View) {
+        if (view.isAttachedToWindow) return
+        suspendCancellableCoroutine { continuation ->
+            val listener = object : View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(v: View) {
+                    v.removeOnAttachStateChangeListener(this)
+                    if (continuation.isActive) {
+                        continuation.resume(Unit)
+                    }
+                }
+
+                override fun onViewDetachedFromWindow(v: View) = Unit
+            }
+            view.addOnAttachStateChangeListener(listener)
+            continuation.invokeOnCancellation {
+                view.removeOnAttachStateChangeListener(listener)
+            }
+        }
+    }
+
     val composeView = ComposeView(context).apply {
         setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnDetachedFromWindow)
         setParentCompositionContext(parentComposition)
@@ -746,10 +785,14 @@ private suspend fun renderOverlayBitmap(
         ?: return android.graphics.Bitmap.createBitmap(targetWidthPx, targetHeightPx, android.graphics.Bitmap.Config.ARGB_8888)
     container.visibility = View.INVISIBLE
     root.addView(container, ViewGroup.LayoutParams(previewWidthPx, previewOverlayHeightPx))
-    container.measure(widthSpec, heightSpec)
-    container.layout(0, 0, previewWidthPx, previewOverlayHeightPx)
-    withFrameNanos { }
-    val bitmap = container.drawToBitmap(android.graphics.Bitmap.Config.ARGB_8888)
-    root.removeView(container)
-    return android.graphics.Bitmap.createScaledBitmap(bitmap, targetWidthPx, targetHeightPx, true)
+    try {
+        awaitAttached(container)
+        container.measure(widthSpec, heightSpec)
+        container.layout(0, 0, previewWidthPx, previewOverlayHeightPx)
+        withFrameNanos { }
+        val bitmap = container.drawToBitmap(android.graphics.Bitmap.Config.ARGB_8888)
+        return android.graphics.Bitmap.createScaledBitmap(bitmap, targetWidthPx, targetHeightPx, true)
+    } finally {
+        root.removeView(container)
+    }
 }

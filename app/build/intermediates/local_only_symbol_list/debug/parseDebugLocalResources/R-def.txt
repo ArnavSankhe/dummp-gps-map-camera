@@ -4,6 +4,7 @@ color blue_checkin
 color ic_launcher_background
 color purple_40
 color purple_80
+drawable chirag_image
 drawable ic_launcher_foreground
 mipmap ic_launcher
 mipmap ic_launcher_round
