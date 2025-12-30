@@ -24,7 +24,6 @@
         android:extractNativeLibs="false"
         android:icon="@mipmap/ic_launcher"
         android:label="GPS Map Camera"
-        android:testOnly="true"
         android:theme="@style/Theme.GpsMapCamera" >
         <activity
             android:name="com.example.gpsmapcamera.MainActivity"

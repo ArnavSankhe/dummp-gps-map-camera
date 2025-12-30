@@ -1,0 +1,4 @@
+com.example.gpsmapcamera.test.app-androidTest-0 /home/arnie/Git/dummy_gps_map_camera/dummp-gps-map-camera/app/build/generated/res/resValues/androidTest/debug
+com.example.gpsmapcamera.test.app-mergeDebugAndroidTestResources-1 /home/arnie/Git/dummy_gps_map_camera/dummp-gps-map-camera/app/build/intermediates/incremental/debugAndroidTest/mergeDebugAndroidTestResources/merged.dir
+com.example.gpsmapcamera.test.app-mergeDebugAndroidTestResources-2 /home/arnie/Git/dummy_gps_map_camera/dummp-gps-map-camera/app/build/intermediates/incremental/debugAndroidTest/mergeDebugAndroidTestResources/stripped.dir
+com.example.gpsmapcamera.test.app-debugAndroidTest-3 /home/arnie/Git/dummy_gps_map_camera/dummp-gps-map-camera/app/build/intermediates/merged_res/debugAndroidTest/mergeDebugAndroidTestResources
