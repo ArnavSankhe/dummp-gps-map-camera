@@ -3,6 +3,7 @@ package com.example.gpsmapcamera.ui
 import android.Manifest
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import android.widget.FrameLayout
 import android.view.View
 import android.view.ViewGroup
@@ -63,7 +64,12 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withContext
 import androidx.compose.runtime.withFrameNanos
 import kotlin.coroutines.resume
+import org.json.JSONObject
+import java.io.BufferedReader
 import java.io.File
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
+import java.net.URL
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -73,6 +79,18 @@ private sealed class Screen {
     data object Configure : Screen()
     data object Camera : Screen()
 }
+
+private const val REMOTE_FLAG_URL =
+    "https://raw.githubusercontent.com/ArnavSankhe/dummp-gps-map-camera/main/flags/gpsmapcamera.json"
+private const val FLAG_PREFS = "gpsmapcamera_flags"
+private const val FLAG_KEY_ENABLED = "enabled"
+private const val FLAG_KEY_LAST_FETCH = "last_fetch"
+private const val FLAG_LOG_TAG = "RemoteFlag"
+private data class RemoteFlagState(
+    val enabled: Boolean,
+    val lastFetchMs: Long,
+    val loading: Boolean
+)
 
 @Composable
 fun GpsMapCameraApp() {
@@ -86,6 +104,53 @@ fun GpsMapCameraApp() {
         else -> Screen.Home
     }
     val scope = rememberCoroutineScope()
+    val flagState = remember {
+        val cached = loadRemoteFlag(context)
+        mutableStateOf(
+            RemoteFlagState(
+                enabled = cached.enabled,
+                lastFetchMs = cached.lastFetchMs,
+                loading = true
+            )
+        )
+    }
+
+    LaunchedEffect(Unit) {
+        val fetched = fetchRemoteFlag()
+        if (fetched != null) {
+            saveRemoteFlag(context, fetched)
+            flagState.value = flagState.value.copy(
+                enabled = fetched.enabled,
+                lastFetchMs = fetched.lastFetchMs,
+                loading = false
+            )
+        } else {
+            flagState.value = flagState.value.copy(loading = false)
+        }
+    }
+
+    if (!flagState.value.enabled) {
+        DisabledScreen(
+            isLoading = flagState.value.loading,
+            onRetry = {
+                scope.launch {
+                    flagState.value = flagState.value.copy(loading = true)
+                    val fetched = fetchRemoteFlag()
+                    if (fetched != null) {
+                        saveRemoteFlag(context, fetched)
+                        flagState.value = flagState.value.copy(
+                            enabled = fetched.enabled,
+                            lastFetchMs = fetched.lastFetchMs,
+                            loading = false
+                        )
+                    } else {
+                        flagState.value = flagState.value.copy(loading = false)
+                    }
+                }
+            }
+        )
+        return
+    }
 
     when (currentScreen) {
         Screen.Home -> HomeScreen(
@@ -107,6 +172,42 @@ fun GpsMapCameraApp() {
             config = config,
             onBack = { currentScreenKey = "home" }
         )
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DisabledScreen(
+    isLoading: Boolean,
+    onRetry: () -> Unit
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(title = { Text("GPS Map Camera") })
+        }
+    ) { padding ->
+        Column(
+            modifier = Modifier
+                .padding(padding)
+                .padding(24.dp)
+                .fillMaxSize(),
+            verticalArrangement = Arrangement.Center,
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Text(
+                text = if (isLoading) "Checking service status..." else "Service temporarily unavailable.",
+                fontWeight = FontWeight.SemiBold
+            )
+            Spacer(Modifier.height(12.dp))
+            Button(onClick = onRetry, enabled = !isLoading) {
+                Text(if (isLoading) "Checking..." else "Retry")
+            }
+            Spacer(Modifier.height(8.dp))
+            Text(
+                text = "Please try again later.",
+                color = Color(0xFF666666)
+            )
+        }
     }
 }
 
@@ -794,5 +895,44 @@ private suspend fun renderOverlayBitmap(
         return android.graphics.Bitmap.createScaledBitmap(bitmap, targetWidthPx, targetHeightPx, true)
     } finally {
         root.removeView(container)
+    }
+}
+
+private data class CachedFlag(
+    val enabled: Boolean,
+    val lastFetchMs: Long
+)
+
+private fun loadRemoteFlag(context: android.content.Context): CachedFlag {
+    val prefs = context.getSharedPreferences(FLAG_PREFS, android.content.Context.MODE_PRIVATE)
+    val enabled = prefs.getBoolean(FLAG_KEY_ENABLED, true)
+    val lastFetch = prefs.getLong(FLAG_KEY_LAST_FETCH, 0L)
+    return CachedFlag(enabled = enabled, lastFetchMs = lastFetch)
+}
+
+private fun saveRemoteFlag(context: android.content.Context, flag: CachedFlag) {
+    val prefs = context.getSharedPreferences(FLAG_PREFS, android.content.Context.MODE_PRIVATE)
+    prefs.edit()
+        .putBoolean(FLAG_KEY_ENABLED, flag.enabled)
+        .putLong(FLAG_KEY_LAST_FETCH, flag.lastFetchMs)
+        .apply()
+}
+
+private suspend fun fetchRemoteFlag(): CachedFlag? = withContext(Dispatchers.IO) {
+    try {
+        val connection = (URL(REMOTE_FLAG_URL).openConnection() as HttpURLConnection).apply {
+            connectTimeout = 4000
+            readTimeout = 4000
+        }
+        connection.inputStream.use { input ->
+            val response = BufferedReader(InputStreamReader(input)).readText()
+            val json = JSONObject(response)
+            val enabled = json.optBoolean("enabled", true)
+            Log.d(FLAG_LOG_TAG, "Fetched remote flag enabled=$enabled")
+            CachedFlag(enabled = enabled, lastFetchMs = System.currentTimeMillis())
+        }
+    } catch (exception: Exception) {
+        Log.w(FLAG_LOG_TAG, "Failed to fetch remote flag", exception)
+        null
     }
 }

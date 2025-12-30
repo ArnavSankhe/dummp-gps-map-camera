@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:ns1="http://schemas.android.com/tools">
+    <color name="blue_checkin">#2F6FED</color>
+    <color name="ic_launcher_background">#FFFFFF</color>
+    <color name="purple_40">#6650a4</color>
+    <color name="purple_80">#D0BCFF</color>
+    <style name="Theme.GpsMapCamera" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar" ns1:targetApi="m">true</item>
+    </style>
+</resources>

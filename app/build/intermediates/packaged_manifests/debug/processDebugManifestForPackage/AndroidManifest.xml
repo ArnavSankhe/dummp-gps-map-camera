@@ -9,6 +9,7 @@
         android:targetSdkVersion="34" />
 
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <permission
         android:name="com.example.gpsmapcamera.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
